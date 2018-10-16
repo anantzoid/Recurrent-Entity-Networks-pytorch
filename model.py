@@ -18,14 +18,14 @@ class InputEncoder(nn.Module):
         return torch.sum(torch.mul(maskx, embedx), 2)
 
 class DynamicMemory(nn.Module):
-    def __init__(self, blocks, embed_size, batch_size):
+    def __init__(self, blocks, embed_size, batch_size, device):
         super(DynamicMemory, self).__init__()
-        self.h = torch.FloatTensor(blocks, batch_size, embed_size)
-        self.w = torch.FloatTensor(blocks, batch_size, embed_size)
+        self.h = torch.FloatTensor(blocks, batch_size, embed_size).to(device)
+        self.w = torch.FloatTensor(blocks, batch_size, embed_size).to(device)
         self.U = nn.Linear(embed_size, embed_size, bias=False)
         self.V = nn.Linear(embed_size, embed_size, bias=False)
         self.W = nn.Linear(embed_size, embed_size, bias=False)
-        self.bias = torch.FloatTensor(embed_size).fill_(0)
+        self.bias = torch.FloatTensor(embed_size).fill_(0).to(device)
         self.prelu = nn.PReLU()
 
         self.U.weight.data.normal_(0.0, 0.1)
@@ -54,9 +54,7 @@ class DynamicMemory(nn.Module):
         return torch.stack(h_list)
 
     def initialize_hidden(self):
-        self.h = nn.init.constant_(self.h, 1)
-        self.w = nn.init.constant_(self.w, 1)
-        return self.h, self.w
+        return nn.init.constant_(self.h, 1)
 
 
 class OutputModule(nn.Module):
@@ -78,10 +76,10 @@ class OutputModule(nn.Module):
 
 
 class REN(nn.Module):
-    def __init__(self, vocab_size, embed_size, blocks, verb_size, object_size, batch_size):
+    def __init__(self, vocab_size, embed_size, blocks, verb_size, object_size, batch_size, device):
         super(REN, self).__init__()
         self.inp_enc = InputEncoder(vocab_size, embed_size)
-        self.mem = DynamicMemory(blocks, embed_size, batch_size)
+        self.mem = DynamicMemory(blocks, embed_size, batch_size, device)
         self.output = OutputModule(embed_size, vocab_size, object_size)
 
     def forward(self, x, query):
@@ -90,7 +88,7 @@ class REN(nn.Module):
         x = self.inp_enc(x)
         # x -> bs x seq x embed_size
         #return torch.sum(x, 1)
-        h, w = self.mem.initialize_hidden()
+        h = self.mem.initialize_hidden()
         for i in range(x.size(1)):
             h = self.mem(x[:,i,:].squeeze(1), h)
             #break

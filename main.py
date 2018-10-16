@@ -19,7 +19,8 @@ def train(model, crit, optimizer, train_loader, args):
         model.zero_grad()
         #print("Story shape:", story.shape)
         #print("Query shape:", query.shape)
-        preds = model(story.to(args.device), query.to(args.device))
+        story, query, answer = story.to(args.device), query.to(args.device), answer.to(args.device)
+        preds = model(story, query)
         loss = crit(preds, answer)
         loss.backward(retain_graph=True)
         torch.nn.utils.clip_grad_norm_(model.parameters(), 40.0)
@@ -37,7 +38,8 @@ def eval(model, crit, val_loader, args):
     totalloss, correct = 0,0
     with torch.no_grad():
         for i, (story, query, answer) in enumerate(val_loader):
-            preds = model(story.to(args.device), query.to(args.device))
+            story, query, answer = story.to(args.device), query.to(args.device), answer.to(args.device)
+            preds = model(story, query)
             loss = crit(preds, answer)
             totalloss += loss.item()
             correct += torch.argmax(preds.detach(), 1).eq(answer.detach()).sum().to("cpu").item()
@@ -48,8 +50,9 @@ def eval(model, crit, val_loader, args):
             'accuracy': correct}
 
 def main(args):
-    train_dataset = bAbIDataset(os.path.join(args.datadir, "tasks_1-20_v1-2/en"), 1)
-    val_dataset = bAbIDataset(os.path.join(args.datadir, "tasks_1-20_v1-2/en"), 1, train=False)
+    train_dataset = bAbIDataset(args.datadir, 1)
+    val_dataset = bAbIDataset(args.datadir, 1, train=False)
+    print("Dataset size: ", len(train_dataset))
     print("Vocab size: ", train_dataset.num_vocab)
     print(train_dataset.word_idx)
     train_loader = data_utils.DataLoader(
@@ -71,7 +74,7 @@ def main(args):
 
 
     # 2nd and 3rd last arguments for verba and action
-    model = REN(train_dataset.num_vocab, 100, 20, 0, 0, args.batchsize)
+    model = REN(train_dataset.num_vocab, 100, 20, 0, 0, args.batchsize, args.device)
     #paths =  utils.build_paths(args.output_path, args.exp_name)
     #writer = SummaryWriter(paths['logs'])
     
@@ -103,17 +106,21 @@ def main(args):
         val_result = eval(model, loss, val_loader, args)
         if epoch < 200:
             scheduler.step()
-
-        logline = 'Epoch: [{0}]\t Train Loss {1:.4f} Acc {2:.3f}  \t \
-                Val Loss {3:.4f} Acc {4:.3f} '.format(
-                epoch, train_result['loss'], train_result['accuracy'],
-                val_result['loss'], val_result['accuracy'])
+    
         #utils.write_logs(epoch, writer, train_result, 'train')
         #utils.write_logs(epoch, writer, val_result, 'val')
         #for param_group in optimizer.param_groups:
         #  writer.add_scalar('lr', param_group['lr'], epoch)
         #  break
         if epoch % args.save_interval == 0 or epoch == args.epochs-1:
+            for param_group in optimizer.param_groups:
+                log_lr = param_group['lr']
+                break
+            logline = 'Epoch: [{0}]\t Train Loss {1:.4f} Acc {2:.3f}  \t \
+                    Val Loss {3:.4f} Acc {4:.3f} lr {5:.4f}'.format(
+                    epoch, train_result['loss'], train_result['accuracy'],
+                    val_result['loss'], val_result['accuracy'], log_lr)
+
             print(logline)
             torch.save({
                 'state_dict': model.state_dict(),
