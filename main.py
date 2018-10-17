@@ -15,23 +15,33 @@ from model import REN
 def train(model, crit, optimizer, train_loader, args):
     model.train()
     totalloss, correct = 0,0
+    sm = torch.nn.Softmax()
     for i, (story, query, answer) in enumerate(train_loader):
         model.zero_grad()
-        #print("Story shape:", story.shape)
-        #print("Query shape:", query.shape)
         story, query, answer = story.to(args.device), query.to(args.device), answer.to(args.device)
         preds = model(story, query)
         loss = crit(preds, answer)
-        #print(preds)
-        #print(answer)
-        #print(loss)
-        #print('-------------------')
+        pred_tokens = torch.argmax(sm(preds.detach()), 1)
         loss.backward(retain_graph=True)
         torch.nn.utils.clip_grad_norm_(model.parameters(), 40.0)
         optimizer.step()
         totalloss += loss.item()
         #print(totalloss)
-        correct += torch.argmax(preds.detach(), 1).eq(answer.detach()).sum().to("cpu").item()
+        correct += pred_tokens.eq(answer.detach()).sum().to("cpu").item()
+
+
+    parameters = list(filter(lambda p: p.grad is not None, model.parameters()))
+    norm_type = 1
+    total_norm = 0
+    for p in parameters:
+        param_norm = p.grad.data.norm(norm_type)
+        total_norm += param_norm.item() ** norm_type
+    total_norm = total_norm ** (1. / norm_type)   
+    print(total_norm) 
+    print(pred_tokens)
+    print(answer)
+    print(loss)
+    print('-------------------')
 
     totalloss /= (i+1)
     correct = (correct*1.0) / ((i+1) * args.batchsize)
@@ -127,6 +137,7 @@ def main(args):
                     val_result['loss'], val_result['accuracy'], log_lr)
 
             print(logline)
+            """
             torch.save({
                 'state_dict': model.state_dict(),
                 'epochs': epoch+1,
@@ -135,6 +146,7 @@ def main(args):
                 'val_scores': val_result,
                 'optimizer': optimizer.state_dict()
             }, os.path.join("/misc/vlgscratch2/LecunGroup/anant/ren", "%s_%d.pth"%(args.exp_name, epoch)))
+            """
 
     return None
 

@@ -21,7 +21,7 @@ class DynamicMemory(nn.Module):
     def __init__(self, blocks, embed_size, batch_size, device):
         super(DynamicMemory, self).__init__()
         self.h = torch.FloatTensor(blocks, batch_size, embed_size).to(device)
-        self.w = torch.FloatTensor(blocks, batch_size, embed_size).to(device)
+        self.w = nn.Embedding(blocks, embed_size)
         self.U = nn.Linear(embed_size, embed_size, bias=False)
         self.V = nn.Linear(embed_size, embed_size, bias=False)
         self.W = nn.Linear(embed_size, embed_size, bias=False)
@@ -32,20 +32,21 @@ class DynamicMemory(nn.Module):
         self.V.weight.data.normal_(0.0, 0.1)
         self.W.weight.data.normal_(0.0, 0.1)
         self.prelu.weight.data.fill_(1)
+        self.batch_size = batch_size
+
+        self.block_idx = [torch.LongTensor([_]).to(device) for _ in range(blocks)]
 
     def forward(self, x, h):
         #x -> bs x es x 1
         #TODO vectorize along blocks
         h_list = []
         for i in range(h.size(0)):
-            self.gate = F.sigmoid(
-                    x * h[i] +
-                    x * self.w[i]
-                    )
+            w_i = self.w(self.block_idx[i]).repeat(self.batch_size, 1)
+            self.gate = F.sigmoid(x * (h[i] + w_i))
             # gate: bs x es
             self.h_tilde = self.prelu(
                     self.U(h[i]) + 
-                    self.V(self.w[i]) + 
+                    self.V(w_i) + 
                     self.W(x) +
                     self.bias)
             # h_tilde: bs x es
@@ -54,7 +55,7 @@ class DynamicMemory(nn.Module):
         return torch.stack(h_list)
 
     def initialize_hidden(self):
-        return nn.init.constant_(self.h, 1)
+        return nn.init.constant_(self.h, 0)
 
 
 class OutputModule(nn.Module):
