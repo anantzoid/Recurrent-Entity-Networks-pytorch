@@ -22,10 +22,15 @@ def train(model, crit, optimizer, train_loader, args):
         story, query, answer = story.to(args.device), query.to(args.device), answer.to(args.device)
         preds = model(story, query)
         loss = crit(preds, answer)
+        #print(preds)
+        #print(answer)
+        #print(loss)
+        #print('-------------------')
         loss.backward(retain_graph=True)
         torch.nn.utils.clip_grad_norm_(model.parameters(), 40.0)
         optimizer.step()
         totalloss += loss.item()
+        #print(totalloss)
         correct += torch.argmax(preds.detach(), 1).eq(answer.detach()).sum().to("cpu").item()
 
     totalloss /= (i+1)
@@ -50,8 +55,8 @@ def eval(model, crit, val_loader, args):
             'accuracy': correct}
 
 def main(args):
-    train_dataset = bAbIDataset(args.datadir, 1)
-    val_dataset = bAbIDataset(args.datadir, 1, train=False)
+    train_dataset = bAbIDataset(args.datadir, args.task)
+    val_dataset = bAbIDataset(args.datadir, args.task, train=False)
     print("Dataset size: ", len(train_dataset))
     print("Vocab size: ", train_dataset.num_vocab)
     print(train_dataset.word_idx)
@@ -129,17 +134,16 @@ def main(args):
                 'train_scores': train_result,
                 'val_scores': val_result,
                 'optimizer': optimizer.state_dict()
-            }, os.path.join("/misc/vlgscratch2/LecunGroup/anant/ren", "%d.pth"%epoch))
+            }, os.path.join("/misc/vlgscratch2/LecunGroup/anant/ren", "%s_%d.pth"%(args.exp_name, epoch)))
 
     return None
 
 if __name__ == "__main__":
-    torch.manual_seed(1000)
+    torch.manual_seed(3000)
     np.random.seed(1000)
-    #TODO lr min/max, grad_noise
     parser = argparse.ArgumentParser(description="")
     parser.add_argument("--datadir", type=str, default='/scratch/ag4508/pn_kaggle/')
-    parser.add_argument("--dataid", type=str, default='0')
+    parser.add_argument("--task", type=int, default=1)
 
     parser.add_argument("--load_model", type=str, default=None,
                               help='Path to saved classifier model')
