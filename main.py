@@ -19,6 +19,7 @@ def train(model, crit, optimizer, train_loader, args):
     for i, (story, query, answer) in enumerate(train_loader):
         model.zero_grad()
         story, query, answer = story.to(args.device), query.to(args.device), answer.to(args.device)
+
         preds = model(story, query)
         loss = crit(preds, answer)
         pred_tokens = torch.argmax(sm(preds.detach()), 1)
@@ -37,11 +38,13 @@ def train(model, crit, optimizer, train_loader, args):
         param_norm = p.grad.data.norm(norm_type)
         total_norm += param_norm.item() ** norm_type
     total_norm = total_norm ** (1. / norm_type)   
+    """
     print(total_norm) 
     print(pred_tokens)
     print(answer)
     print(loss)
     print('-------------------')
+    """
 
     totalloss /= (i+1)
     correct = (correct*1.0) / ((i+1) * args.batchsize)
@@ -74,7 +77,7 @@ def main(args):
         train_dataset,
         batch_size=args.batchsize,
         num_workers=args.njobs,
-        shuffle = True,
+        shuffle = False,
         pin_memory=True,
         timeout=300,
         drop_last=True)
@@ -86,7 +89,12 @@ def main(args):
         pin_memory=True,
         timeout=300,
         drop_last=True)
-
+    """
+    print(train_dataset[0][0][0])
+    print(train_dataset[0][-1][0])
+    print([train_dataset.idx2word[i] for i in train_dataset[0][0][0]])
+    exit()
+    """
 
     # 2nd and 3rd last arguments for verba and action
     model = REN(train_dataset.num_vocab, 100, 20, 0, 0, args.batchsize, args.device)
@@ -165,7 +173,7 @@ if __name__ == "__main__":
     parser.add_argument("--lr_step", type=int, default=10)
     parser.add_argument("--weight_decay", type=float, default=1e-6)
     parser.add_argument("--epochs", type=int, default=1)
-    parser.add_argument("--save_interval", type=int, default=10)
+    parser.add_argument("--save_interval", type=int, default=1)
     parser.add_argument("--output_path", type=str, default='/scratch/ag4508/pn_kaggle/output',
                                 help='Location to save the logs')
     parser.add_argument("--exp_name", type=str, default='default_model',

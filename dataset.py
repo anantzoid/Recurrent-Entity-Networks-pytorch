@@ -30,13 +30,14 @@ class bAbIDataset(data.Dataset):
         self.memory_size = min(memory_size, self.max_story_size)
 
         # Add time words/indexes
-        for i in range(self.memory_size):
-            word_idx["time{}".format(i+1)] = "time{}".format(i+1)
+        #for i in range(self.memory_size):
+        #    word_idx["time{}".format(i+1)] = "time{}".format(i+1)
 
         self.num_vocab = len(word_idx) + 1 # +1 for nil word
         self.sentence_size = max(self.query_size, self.sentence_size) # for the position
         self.sentence_size += 1  # +1 for time words
         self.word_idx = word_idx
+        self.idx2word = {self.word_idx[i]:i for i in self.word_idx.keys()}
 
         self.mean_story_size = int(np.mean([ len(s) for s, _, _ in data ]))
 
