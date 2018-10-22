@@ -92,7 +92,7 @@ def main(args):
         train_dataset,
         batch_size=args.batchsize,
         num_workers=args.njobs,
-        shuffle = False,
+        shuffle = True,
         pin_memory=True,
         timeout=300,
         drop_last=True)
@@ -100,7 +100,7 @@ def main(args):
         val_dataset,
         batch_size=args.batchsize,
         num_workers=args.njobs,
-        shuffle = True,
+        shuffle = False,
         pin_memory=True,
         timeout=300,
         drop_last=True)
@@ -116,7 +116,6 @@ def main(args):
     #paths =  utils.build_paths(args.output_path, args.exp_name)
     #writer = SummaryWriter(paths['logs'])
     
-    # TODO to device
     model = model.to(args.device)
     if args.multi:
         model = torch.nn.DataParallel(model, device_ids=args.gpu_range)
