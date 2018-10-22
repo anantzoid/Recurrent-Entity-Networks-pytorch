@@ -1,6 +1,7 @@
 import os
 import argparse
 import torch
+import torch.nn as nn
 from torch.utils import data as data_utils
 #from torch.utils.data.dataset import Dataset
 import torch.optim as optim
@@ -10,7 +11,17 @@ import numpy as np
 #import utils
 
 from dataset import bAbIDataset
-from model import REN
+from model1 import REN1
+
+def _gradient_noise_and_clip(parameters,
+                                noise_stddev=1e-3, max_clip=40.0):
+    parameters = list(filter(lambda p: p.grad is not None, parameters))
+    nn.utils.clip_grad_norm(parameters, max_clip)
+
+    for p in parameters:
+        noise = torch.randn(p.size()) * noise_stddev
+        p.grad.data.add_(noise)
+
 
 def train(model, crit, optimizer, train_loader, args):
     model.train()
@@ -24,20 +35,24 @@ def train(model, crit, optimizer, train_loader, args):
         loss = crit(preds, answer)
         pred_tokens = torch.argmax(sm(preds.detach()), 1)
         loss.backward(retain_graph=True)
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 40.0)
+        #torch.nn.utils.clip_grad_norm_(model.parameters(), 40.0)
+        _gradient_noise_and_clip(model.parameters(),
+                noise_stddev=0.005, max_clip=40.0)
         optimizer.step()
         totalloss += loss.item()
         #print(totalloss)
         correct += pred_tokens.eq(answer.detach()).sum().to("cpu").item()
 
 
+    """
     parameters = list(filter(lambda p: p.grad is not None, model.parameters()))
-    norm_type = 1
+    norm_type = 2
     total_norm = 0
     for p in parameters:
         param_norm = p.grad.data.norm(norm_type)
         total_norm += param_norm.item() ** norm_type
     total_norm = total_norm ** (1. / norm_type)   
+    """
     """
     print(total_norm) 
     print(pred_tokens)
@@ -97,7 +112,7 @@ def main(args):
     """
 
     # 2nd and 3rd last arguments for verba and action
-    model = REN(train_dataset.num_vocab, 100, 20, 0, 0, args.batchsize, args.device)
+    model = REN1(20, train_dataset.num_vocab, 100, args.device, train_dataset.sentence_size)
     #paths =  utils.build_paths(args.output_path, args.exp_name)
     #writer = SummaryWriter(paths['logs'])
     
@@ -145,7 +160,6 @@ def main(args):
                     val_result['loss'], val_result['accuracy'], log_lr)
 
             print(logline)
-            """
             torch.save({
                 'state_dict': model.state_dict(),
                 'epochs': epoch+1,
@@ -153,8 +167,7 @@ def main(args):
                 'train_scores': train_result,
                 'val_scores': val_result,
                 'optimizer': optimizer.state_dict()
-            }, os.path.join("/misc/vlgscratch2/LecunGroup/anant/ren", "%s_%d.pth"%(args.exp_name, epoch)))
-            """
+            }, os.path.join(args.output_path, "%s_%d.pth"%(args.exp_name, epoch)))
 
     return None
 
@@ -171,10 +184,10 @@ if __name__ == "__main__":
     parser.add_argument("--njobs", type=int, default=2)
     parser.add_argument("--lr", type=float, default=0.01)
     parser.add_argument("--lr_step", type=int, default=10)
-    parser.add_argument("--weight_decay", type=float, default=1e-6)
+    parser.add_argument("--weight_decay", type=float, default=0)
     parser.add_argument("--epochs", type=int, default=1)
-    parser.add_argument("--save_interval", type=int, default=1)
-    parser.add_argument("--output_path", type=str, default='/scratch/ag4508/pn_kaggle/output',
+    parser.add_argument("--save_interval", type=int, default=10)
+    parser.add_argument("--output_path", type=str, default='/misc/vlgscratch2/LecunGroup/anant/ren',
                                 help='Location to save the logs')
     parser.add_argument("--exp_name", type=str, default='default_model',
                                 help='Experiment Name')
