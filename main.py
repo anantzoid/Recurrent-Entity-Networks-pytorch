@@ -14,13 +14,13 @@ from dataset import bAbIDataset
 from model1 import REN1
 
 def _gradient_noise_and_clip(parameters,
-                                noise_stddev=1e-3, max_clip=40.0):
+                                noise_stddev=1e-3, max_clip=40.0, device="cpu"):
     parameters = list(filter(lambda p: p.grad is not None, parameters))
     nn.utils.clip_grad_norm(parameters, max_clip)
 
     for p in parameters:
         noise = torch.randn(p.size()) * noise_stddev
-        p.grad.data.add_(noise)
+        p.grad.data.add_(noise.to(device))
 
 
 def train(model, crit, optimizer, train_loader, args):
@@ -37,7 +37,7 @@ def train(model, crit, optimizer, train_loader, args):
         loss.backward(retain_graph=True)
         #torch.nn.utils.clip_grad_norm_(model.parameters(), 40.0)
         _gradient_noise_and_clip(model.parameters(),
-                noise_stddev=0.005, max_clip=40.0)
+                noise_stddev=0.005, max_clip=40.0, device=args.device)
         optimizer.step()
         totalloss += loss.item()
         #print(totalloss)
@@ -112,11 +112,11 @@ def main(args):
     """
 
     # 2nd and 3rd last arguments for verba and action
-    model = REN1(20, train_dataset.num_vocab, 100, args.device, train_dataset.sentence_size)
+    model = REN1(20, train_dataset.num_vocab, 100, args.device, train_dataset.sentence_size).to(args.device)
+    model.init_keys()
     #paths =  utils.build_paths(args.output_path, args.exp_name)
     #writer = SummaryWriter(paths['logs'])
     
-    model = model.to(args.device)
     if args.multi:
         model = torch.nn.DataParallel(model, device_ids=args.gpu_range)
 
@@ -180,13 +180,12 @@ if __name__ == "__main__":
     parser.add_argument("--load_model", type=str, default=None,
                               help='Path to saved classifier model')
     parser.add_argument("--batchsize", type=int, default=32)
-    parser.add_argument("--njobs", type=int, default=2)
+    parser.add_argument("--njobs", type=int, default=10)
     parser.add_argument("--lr", type=float, default=0.01)
-    parser.add_argument("--lr_step", type=int, default=10)
     parser.add_argument("--weight_decay", type=float, default=0)
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--save_interval", type=int, default=10)
-    parser.add_argument("--output_path", type=str, default='/misc/vlgscratch2/LecunGroup/anant/ren',
+    parser.add_argument("--output_path", type=str, default='/misc/vlgscratch2/LecunGroup/anant/ren/models',
                                 help='Location to save the logs')
     parser.add_argument("--exp_name", type=str, default='default_model',
                                 help='Experiment Name')

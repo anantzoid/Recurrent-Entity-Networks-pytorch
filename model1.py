@@ -12,9 +12,9 @@ class InputEncoder(nn.Module):
         return torch.sum(x * self.mask, 2)
 
 class MemCell(nn.Module):
-    def __init__(self, num_blocks, embed_size, keys, activation, device):
+    def __init__(self, num_blocks, embed_size, activation, device):
         super(MemCell, self).__init__()
-        self.keys = keys
+        #self.keys = keys
         self.num_blocks = num_blocks
         self.activation = activation
         self.embed_size = embed_size
@@ -88,18 +88,23 @@ class OutputModule(nn.Module):
 class REN1(nn.Module):
     def __init__(self, num_blocks, vocab_size, embed_size, device, sentence_size):
         super(REN1, self).__init__()
-
         vocab_size = vocab_size + num_blocks
+        self.device = device
+        self.vocab_size = vocab_size
+        self.num_blocks = num_blocks
         self.embedlayer = nn.Embedding(vocab_size, embed_size, padding_idx=0)
         self.embedlayer._parameters['weight'].data.normal_(0.0, 0.1)
 
         self.prelu = nn.PReLU(num_parameters=embed_size, init=1.0)
         self.encoder = InputEncoder(sentence_size, embed_size, device)
 
-        keys = [torch.LongTensor([key]).to(device) for key in range(vocab_size - num_blocks, vocab_size)]
-        keys = [self.embedlayer(key).squeeze(0) for key in keys]
-        self.cell = MemCell(num_blocks, embed_size, keys, self.prelu, device)
+        self.cell = MemCell(num_blocks, embed_size, self.prelu, device)
         self.output = OutputModule(num_blocks, vocab_size, embed_size, self.prelu, device)
+
+    def init_keys(self):
+        keys = [torch.LongTensor([key]).to(self.device) for key in range(self.vocab_size - self.num_blocks, self.vocab_size)]
+        keys = [self.embedlayer(key).squeeze(0) for key in keys]
+        self.cell.keys = keys
 
     def forward(self, story, query):
         story_embedded = self.embedlayer(story)
