@@ -69,7 +69,7 @@ class OutputModule(nn.Module):
         self.activation = activation
         self.num_blocks = num_blocks
         self.embed_size = embed_size
-        self.R = nn.Linear(embed_size, 15, bias=False)
+        self.R = nn.Linear(embed_size, vocab_size, bias=False)
         self.H = nn.Linear(embed_size, embed_size, bias=False)
         self.R.weight.data.normal_(0.0, 0.1)
         self.H.weight.data.normal_(0.0, 0.1)
