@@ -5,14 +5,11 @@ import torch.nn.functional as F
 class InputEncoder(nn.Module):
     def __init__(self, vocab_size, embed_dim, sentence_size, device):
         super(InputEncoder, self).__init__()
-        self.embed = nn.Embedding(vocab_size, embed_dim, padding_idx=0)
-        self.embed._parameters['weight'].data.normal_(0.0, 0.1)
         #self.masks = nn.Embedding(vocab_size, embed_dim, padding_idx=0)
         self.mask = torch.FloatTensor(sentence_size, embed_dim).fill_(1).to(device)
         #self.masks._parameters['weight'].data.fill_(1)
 
-    def forward(self, x):
-        embedx = self.embed(x)
+    def forward(self, embedx):
         # approximate each sentence of the story to a single embedding
         return torch.sum(embedx * self.mask, 2)
         #maskx = self.masks(x)
@@ -79,14 +76,18 @@ class OutputModule(nn.Module):
 class REN(nn.Module):
     def __init__(self, vocab_size, embed_size, blocks, verb_size, object_size, batch_size, device, sent_size):
         super(REN, self).__init__()
-        self.inp_enc = InputEncoder(vocab_size, embed_size, sent_size, device)
+        self.embed = nn.Embedding(vocab_size, embed_size, padding_idx=0)
+        self.embed._parameters['weight'].data.normal_(0.0, 0.1)
+        self.story_enc = InputEncoder(vocab_size, embed_size, sent_size, device)
+        self.query_enc = InputEncoder(vocab_size, embed_size, sent_size, device)
         self.mem = DynamicMemory(blocks, embed_size, batch_size, device)
         self.output = OutputModule(embed_size, vocab_size, object_size)
 
     def forward(self, x, query):
         # x -> bs x story x token of sentences
         # q -> bs x tokens
-        x = self.inp_enc(x)
+        x = self.embed(x)
+        x = self.story_enc(x)
         # x -> bs x seq x embed_size
         #return torch.sum(x, 1)
         h = self.mem.initialize_hidden()
@@ -94,5 +95,5 @@ class REN(nn.Module):
             h = self.mem(x[:,i,:].squeeze(1), h)
             #break
         last_state = h 
-        return self.output(last_state, self.inp_enc(query.unsqueeze(1)).squeeze(1))
+        return self.output(last_state, self.query_enc(query.unsqueeze(1)).squeeze(1))
 

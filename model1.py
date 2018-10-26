@@ -6,7 +6,7 @@ class InputEncoder(nn.Module):
     def __init__(self, sentence_size, embed_size, device):
         super(InputEncoder, self).__init__()
         #self.mask = nn.Linear(sentence_size, embed_size, bias=False)
-        self.mask = torch.FloatTensor(sentence_size, embed_size).fill_(1).to(device)
+        self.mask = nn.Parameter(torch.FloatTensor(sentence_size, embed_size).fill_(1), requires_grad=True)#.to(device).requires_grad_()
         #self.mask._parameters['weight'].data.fill_(1)
     def forward(self, x):
         return torch.sum(x * self.mask, 2)
@@ -22,7 +22,7 @@ class MemCell(nn.Module):
         self.U = nn.Linear(embed_size, embed_size, bias=False)
         self.V = nn.Linear(embed_size, embed_size, bias=False)
         self.W = nn.Linear(embed_size, embed_size, bias=False)
-        self.bias = torch.FloatTensor(embed_size).normal_(0.0, 0.1).to(device)
+        self.bias = nn.Parameter(torch.FloatTensor(embed_size).normal_(0.0, 0.1), requires_grad=True)#.to(device).requires_grad_()
         self.U.weight.data.normal_(0.0, 0.1)
         self.V.weight.data.normal_(0.0, 0.1)
         self.W.weight.data.normal_(0.0, 0.1)
@@ -69,7 +69,7 @@ class OutputModule(nn.Module):
         self.activation = activation
         self.num_blocks = num_blocks
         self.embed_size = embed_size
-        self.R = nn.Linear(embed_size, vocab_size, bias=False)
+        self.R = nn.Linear(embed_size, 15, bias=False)
         self.H = nn.Linear(embed_size, embed_size, bias=False)
         self.R.weight.data.normal_(0.0, 0.1)
         self.H.weight.data.normal_(0.0, 0.1)
@@ -94,7 +94,8 @@ class REN1(nn.Module):
         self.embedlayer._parameters['weight'].data.normal_(0.0, 0.1)
 
         self.prelu = nn.PReLU(num_parameters=embed_size, init=1.0)
-        self.encoder = InputEncoder(sentence_size, embed_size, device)
+        self.story_enc = InputEncoder(sentence_size, embed_size, device)
+        self.query_enc = InputEncoder(sentence_size, embed_size, device)
 
         keys = [torch.LongTensor([key]).to(device) for key in range(vocab_size - num_blocks, vocab_size)]
         keys = [self.embedlayer(key).squeeze(0) for key in keys]
@@ -104,9 +105,8 @@ class REN1(nn.Module):
     def forward(self, story, query):
         story_embedded = self.embedlayer(story)
         query_embedded = self.embedlayer(query.unsqueeze(1))
-        story_embedded = self.encoder(story_embedded)
-        query_embedded = self.encoder(query_embedded)
-
+        story_embedded = self.story_enc(story_embedded)
+        query_embedded = self.query_enc(query_embedded)
         initial_state = self.cell.zero_state(story.shape[0])
         for i in range(story_embedded.shape[1]):
             initial_state = self.cell(story_embedded[:,i,:], initial_state) 
