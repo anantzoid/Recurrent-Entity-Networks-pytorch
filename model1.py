@@ -86,7 +86,7 @@ class OutputModule(nn.Module):
         return y
 
 class REN1(nn.Module):
-    def __init__(self, num_blocks, vocab_size, embed_size, device, sentence_size):
+    def __init__(self, num_blocks, vocab_size, embed_size, device, sentence_size, query_size):
         super(REN1, self).__init__()
 
         vocab_size = vocab_size + num_blocks
@@ -95,7 +95,7 @@ class REN1(nn.Module):
 
         self.prelu = nn.PReLU(num_parameters=embed_size, init=1.0)
         self.story_enc = InputEncoder(sentence_size, embed_size, device)
-        self.query_enc = InputEncoder(sentence_size, embed_size, device)
+        self.query_enc = InputEncoder(query_size, embed_size, device)
 
         keys = [torch.LongTensor([key]).to(device) for key in range(vocab_size - num_blocks, vocab_size)]
         keys = [self.embedlayer(key).squeeze(0) for key in keys]

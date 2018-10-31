@@ -16,6 +16,8 @@ from model1 import REN1
 def weight_norm(parameters):
     norm_type = 2
     total_norm = 0
+    if parameters is None:
+        return 0
     for p in parameters:
         param_norm = p.norm(norm_type)
         total_norm += param_norm.item() ** norm_type
@@ -32,6 +34,12 @@ def _gradient_noise_and_clip(parameters,
         noise = torch.randn(p.size()) * noise_stddev
         p.grad.data.add_(noise)
 
+def cyclic_lr(step, step_size, lr_min, lr_max):
+    cycle = np.floor(1+float(step) / (2*step_size))
+    x = np.abs(float(step)/step_size-2*cycle+1)
+    lr = lr_min + (lr_max-lr_min)*np.max([0.0, 1-x])
+    return lr
+ 
 
 def train(model, crit, optimizer, train_loader, args):
     model.train()
@@ -55,7 +63,9 @@ def train(model, crit, optimizer, train_loader, args):
         #print(totalloss)
         correct += pred_tokens.eq(answer.detach()).sum().to("cpu").item()
 
-
+    #print(sm(preds.detach()[:5]))
+    #print(pred_tokens[:10])
+    #print(answer[:10])
     totalloss /= (i+1)
     correct = (correct*1.0) / ((i+1) * args.batchsize)
     return {'loss': totalloss,
@@ -82,8 +92,9 @@ def main(args):
     train_dataset = bAbIDataset(args.datadir, args.task)
     val_dataset = bAbIDataset(args.datadir, args.task, train=False)
     print("Dataset size: ", len(train_dataset))
-    print("Vocab size: ", train_dataset.num_vocab)
-    print(train_dataset.word_idx)
+    #print("Vocab size: ", train_dataset.num_vocab)
+    print(train_dataset.sentence_size)
+    print(train_dataset.vocab)
     train_loader = data_utils.DataLoader(
         train_dataset,
         batch_size=args.batchsize,
@@ -108,7 +119,7 @@ def main(args):
     """
 
     # 2nd and 3rd last arguments for verba and action
-    model = REN1(20, train_dataset.num_vocab, 100, args.device, train_dataset.sentence_size)
+    model = REN1(20, train_dataset.num_vocab, 100, args.device, train_dataset.sentence_size, train_dataset.query_size)
     #paths =  utils.build_paths(args.output_path, args.exp_name)
     log_path = os.path.join("logs", args.exp_name)
     if not os.path.exists(log_path):
@@ -121,7 +132,7 @@ def main(args):
 
     loss = torch.nn.CrossEntropyLoss().to(args.device)
 
-    lr = args.lr#cyclic_learning_rate(0)
+    lr = cyclic_lr(0, 10, 2e-4, 1e-2)
     optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=args.weight_decay)
 
     scheduler = StepLR(optimizer, step_size=25, gamma=0.5)
@@ -145,8 +156,9 @@ def main(args):
         val_result = eval(model, loss, val_loader, args)
         if epoch < 200:
             scheduler.step()
-        #for param_group in optimizer.param_groups:
-        #    param_group['lr'] = cyclic_learning_rate(epoch*(len(train_dataset)//args.batchsize))
+        lr = cyclic_lr(epoch*(len(train_dataset)//args.batchsize), 10, 2e-4, 1e-2)
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = lr#cyclic_learning_rate(epoch*(len(train_dataset)//args.batchsize))
     
         for key in train_result.keys():
             writer.add_scalar('{}_{}'.format('train', key), train_result[key], epoch)
@@ -196,7 +208,7 @@ def main(args):
     return None
 
 if __name__ == "__main__":
-    torch.manual_seed(3000)
+    torch.manual_seed(2000)
     np.random.seed(1000)
     parser = argparse.ArgumentParser(description="")
     parser.add_argument("--datadir", type=str, default='/scratch/ag4508/pn_kaggle/')
