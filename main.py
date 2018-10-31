@@ -131,8 +131,11 @@ def main(args):
         model = torch.nn.DataParallel(model, device_ids=args.gpu_range)
 
     loss = torch.nn.CrossEntropyLoss().to(args.device)
-
-    lr = cyclic_lr(0, 10, 2e-4, 1e-2)
+    
+    if args.cyc_lr is True:
+        lr = cyclic_lr(0, 10, 2e-4, 1e-2)
+    else:
+        lr = args.lr
     optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=args.weight_decay)
 
     scheduler = StepLR(optimizer, step_size=25, gamma=0.5)
@@ -156,9 +159,10 @@ def main(args):
         val_result = eval(model, loss, val_loader, args)
         if epoch < 200:
             scheduler.step()
-        lr = cyclic_lr(epoch*(len(train_dataset)//args.batchsize), 10, 2e-4, 1e-2)
-        for param_group in optimizer.param_groups:
-            param_group['lr'] = lr#cyclic_learning_rate(epoch*(len(train_dataset)//args.batchsize))
+        if args.cyc_lr is True:
+            lr = cyclic_lr(epoch*(len(train_dataset)//args.batchsize), 10, 2e-4, 1e-2)
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = lr#cyclic_learning_rate(epoch*(len(train_dataset)//args.batchsize))
     
         for key in train_result.keys():
             writer.add_scalar('{}_{}'.format('train', key), train_result[key], epoch)
@@ -230,6 +234,7 @@ if __name__ == "__main__":
     parser.add_argument("--gpuid", type=int, default=0, help='Default GPU id')
     parser.add_argument("--multi", action='store_true', help='To use DataParallel')
     parser.add_argument("--gpu_range",type=str,default="0,1,2,3", help='GPU ids to use if multi')
+    parser.add_argument("--cyc_lr", action='store_true', help='Cyclic LR')
 
     args = parser.parse_args()
     args.gpu_range = [int(_) for _ in args.gpu_range.split(",")]
