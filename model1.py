@@ -86,7 +86,7 @@ class OutputModule(nn.Module):
         return y
 
 class REN1(nn.Module):
-    def __init__(self, num_blocks, vocab_size, embed_size, device, sentence_size):
+    def __init__(self, num_blocks, vocab_size, embed_size, device, sentence_size, query_size):
         super(REN1, self).__init__()
         vocab_size = vocab_size + num_blocks
         self.device = device
@@ -97,7 +97,7 @@ class REN1(nn.Module):
 
         self.prelu = nn.PReLU(num_parameters=embed_size, init=1.0)
         self.story_enc = InputEncoder(sentence_size, embed_size, device)
-        self.query_enc = InputEncoder(sentence_size, embed_size, device)
+        self.query_enc = InputEncoder(query_size, embed_size, device)
 
         self.cell = MemCell(num_blocks, embed_size, self.prelu, device)
         self.output = OutputModule(num_blocks, vocab_size, embed_size, self.prelu, device)

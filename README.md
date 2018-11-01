@@ -24,9 +24,9 @@ Task | EntNet (paper) | EntNet (TF) | EntNet (Pytorch)
 9: simple negation | 0.1 | 0
 10: indefinite knowledge | 0.6 | 0
 11: basic coreference | 0.3 | 0
-12: conjunction | 0 | 0
+12: conjunction | 0 | 0 | 0.6
 13: compound coreference | 1.3 | 0
-14: time reasoning | 0 | 0
+14: time reasoning | 0 | 0 | 3 | cyclicLR - puncts matter
 15: basic deduction | 0 | 0
 16: basic induction | 0.2 | 0
 17: positional reasoning | 0.5 | 1.7
