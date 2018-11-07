@@ -95,6 +95,7 @@ def main(args):
     #print("Vocab size: ", train_dataset.num_vocab)
     print(train_dataset.sentence_size)
     print(train_dataset.vocab)
+    print(train_dataset[0][0].shape)
     train_loader = data_utils.DataLoader(
         train_dataset,
         batch_size=args.batchsize,
@@ -120,7 +121,7 @@ def main(args):
 
     # 2nd and 3rd last arguments for verba and action
     #model = REN1(20, train_dataset.num_vocab, 100, args.device, train_dataset.sentence_size).to(args.device)
-    model = REN1(20, train_dataset.num_vocab, 100, args.device, train_dataset.sentence_size, train_dataset.query_size)
+    model = REN1(20, train_dataset.num_vocab, 100, args.device, train_dataset.sentence_size, train_dataset.query_size).to(args.device)
     model.init_keys()
     #paths =  utils.build_paths(args.output_path, args.exp_name)
     log_path = os.path.join("logs", args.exp_name)
@@ -139,8 +140,8 @@ def main(args):
         lr = args.lr
     optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=args.weight_decay)
 
-    scheduler = StepLR(optimizer, step_size=25, gamma=0.5)
-    #scheduler = CyclicLR(optimizer, base_lr=args.lr, max_lr=1e-2, step_size=10, mode='triangular')
+    if not args.cyc_lr:
+        scheduler = StepLR(optimizer, step_size=25, gamma=0.5)
 
     start_epoch, end_epoch = 0, args.epochs
     if args.load_model is not None and args.load_model != '':
@@ -158,12 +159,12 @@ def main(args):
     for epoch in range(start_epoch, end_epoch):
         train_result = train(model, loss, optimizer, train_loader, args)
         val_result = eval(model, loss, val_loader, args)
-        if epoch < 200:
-            scheduler.step()
         if args.cyc_lr is True:
             lr = cyclic_lr(epoch*(len(train_dataset)//args.batchsize), 10, 2e-4, 1e-2)
             for param_group in optimizer.param_groups:
                 param_group['lr'] = lr#cyclic_learning_rate(epoch*(len(train_dataset)//args.batchsize))
+        elif epoch < 200:
+            scheduler.step()
     
         for key in train_result.keys():
             writer.add_scalar('{}_{}'.format('train', key), train_result[key], epoch)
