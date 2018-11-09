@@ -200,7 +200,6 @@ def main(args):
                     val_result['loss'], val_result['accuracy'], log_lr)
 
             print(logline)
-            """
             torch.save({
                 'state_dict': model.state_dict(),
                 'epochs': epoch+1,
@@ -209,7 +208,6 @@ def main(args):
                 'val_scores': val_result,
                 'optimizer': optimizer.state_dict()
             }, os.path.join(args.output_path, "%s_%d.pth"%(args.exp_name, epoch)))
-            """
 
     return None
 

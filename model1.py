@@ -78,7 +78,7 @@ class OutputModule(nn.Module):
         state = torch.stack(torch.split(state, self.embed_size, dim=1), dim=1)
         attention = torch.sum(state * x, dim=2)
         attention = attention - torch.max(attention, dim=-1, keepdim=True)[0] 
-        attention = attention.unsqueeze(2)
+        attention = F.softmax(attention).unsqueeze(2)
 
         u = torch.sum(state * attention, dim=1)
         q = x.squeeze(1)
