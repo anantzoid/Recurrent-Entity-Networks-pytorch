@@ -66,7 +66,7 @@ class MemCell(nn.Module):
             # mask[state_j_next.nonzero()]=1
             # state_j_next[state_j_next<=0.0] = 1.0
 
-            state_j_next_st = state_j_next / state_j_next_norm
+            state_j_next = self.th(state_j_next) / state_j_next_norm
 
             next_states.append(state_j_next)
         state_next = torch.cat(next_states, dim=1)
@@ -93,11 +93,8 @@ class OutputModule(nn.Module):
         #print(state.shape)
         #print(x.shape)
         attention = torch.sum(state * x, dim=2)
-        attention = attention - torch.max(attention, dim=-1, keepdim=True)[0]
+        attention = attention - torch.max(attention, dim=-1, keepdim=True)[0] 
         attention = F.softmax(attention).unsqueeze(2)
-        #print(attention.shape)
-        #exit()
-
 
         u = torch.sum(state * attention, dim=1)
         q = x.squeeze(1)

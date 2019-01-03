@@ -47,19 +47,19 @@ def train(model, crit, optimizer, train_loader, args):
     totalloss, correct = 0,0
     sm = torch.nn.Softmax()
     for i, (story, query, answer) in enumerate(train_loader):
-        if i==0:
+        #if i==0:
             # print(story)
             # print("\n")
             # print(query)
             # print("\n")
-            print(answer)
+            #print(answer)
 
         model.zero_grad()
         story, query, answer = story.to(args.device), query.to(args.device), answer.to(args.device)
 
         preds = model(story, query)
-        if i==0:
-            print(torch.argmax(preds, dim=1))
+        #if i==0:
+        #    print(torch.argmax(preds, dim=1))
 
         loss = crit(preds, answer)
         loss = loss / story.shape[1]
@@ -225,7 +225,6 @@ def main(args):
                     val_result['loss'], val_result['accuracy'], log_lr)
             print(logline)
 
-            """
             torch.save({
                 'state_dict': model.state_dict(),
                 'epochs': epoch+1,
@@ -234,7 +233,6 @@ def main(args):
                 'val_scores': val_result,
                 'optimizer': optimizer.state_dict()
             }, os.path.join(args.output_path, "%s_%d.pth"%(args.exp_name, epoch)))
-            """
 
     return None
 
