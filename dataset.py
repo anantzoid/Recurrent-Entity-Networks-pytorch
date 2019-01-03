@@ -23,7 +23,7 @@ class bAbIDataset(data.Dataset):
             truncated_story_length = 70
         stories_train = truncate_stories(train_data, truncated_story_length)
         stories_test = truncate_stories(test_data, truncated_story_length)
-    
+
         self.vocab, token_to_id = get_tokenizer(stories_train + stories_test)
         self.num_vocab = len(self.vocab)
 
@@ -42,7 +42,7 @@ class bAbIDataset(data.Dataset):
             story, query, answer = pad_stories(stories_token_train, \
                 max_sentence_length, max_story_length, max_query_length)
         else:
- 
+
             story, query, answer = pad_stories(stories_token_test, \
                 max_sentence_length, max_story_length, max_query_length)
         """

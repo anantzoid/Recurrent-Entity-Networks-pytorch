@@ -11,6 +11,15 @@ class InputEncoder(nn.Module):
     def forward(self, x):
         return torch.sum(x * self.mask, 2)
 
+class thres(nn.Threshold):
+    def __init__(self, inplace=False):
+        super(thres, self).__init__(0., 1., inplace)
+
+    def extra_repr(self):
+        inplace_str = 'inplace' if self.inplace else ''
+        return inplace_str
+
+
 class MemCell(nn.Module):
     def __init__(self, num_blocks, embed_size, activation, device):
         super(MemCell, self).__init__()
@@ -26,6 +35,7 @@ class MemCell(nn.Module):
         self.U.weight.data.normal_(0.0, 0.1)
         self.V.weight.data.normal_(0.0, 0.1)
         self.W.weight.data.normal_(0.0, 0.1)
+        self.th = thres()
 
     def get_gate(self, state_j, key_j, inputs):
         a = torch.sum(inputs * state_j, dim=1)
@@ -51,8 +61,12 @@ class MemCell(nn.Module):
 
             state_j_next = state_j + gate_j.unsqueeze(-1) * candidate_j
             state_j_next_norm = torch.abs(torch.norm(state_j_next, p=2, dim=-1, keepdim=True)) + 1e-8
-            #state_j_next[state_j_next<=0.0] = 1.0
-            state_j_next = state_j_next / state_j_next_norm
+
+            # mask=torch.zeros(state_j_next.shape)
+            # mask[state_j_next.nonzero()]=1
+            # state_j_next[state_j_next<=0.0] = 1.0
+
+            state_j_next_st = state_j_next / state_j_next_norm
 
             next_states.append(state_j_next)
         state_next = torch.cat(next_states, dim=1)
@@ -73,12 +87,17 @@ class OutputModule(nn.Module):
         self.H = nn.Linear(embed_size, embed_size, bias=False)
         self.R.weight.data.normal_(0.0, 0.1)
         self.H.weight.data.normal_(0.0, 0.1)
-        
+
     def forward(self, x, state):
         state = torch.stack(torch.split(state, self.embed_size, dim=1), dim=1)
+        #print(state.shape)
+        #print(x.shape)
         attention = torch.sum(state * x, dim=2)
-        attention = attention - torch.max(attention, dim=-1, keepdim=True)[0] 
-        attention = attention.unsqueeze(2)
+        attention = attention - torch.max(attention, dim=-1, keepdim=True)[0]
+        attention = F.softmax(attention).unsqueeze(2)
+        #print(attention.shape)
+        #exit()
+
 
         u = torch.sum(state * attention, dim=1)
         q = x.squeeze(1)
@@ -114,7 +133,6 @@ class REN1(nn.Module):
         query_embedded = self.query_enc(query_embedded)
         initial_state = self.cell.zero_state(story.shape[0])
         for i in range(story_embedded.shape[1]):
-            initial_state = self.cell(story_embedded[:,i,:], initial_state) 
+            initial_state = self.cell(story_embedded[:,i,:], initial_state)
         outputs = self.output(query_embedded, initial_state)
         return outputs
-
