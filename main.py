@@ -15,6 +15,28 @@ from model1 import REN1
 
 import torch.nn.functional as F
 
+
+class SmallModel(torch.nn.Module):
+    def __init__(self, vocab_size, embed_size):
+        super(SmallModel, self).__init__()
+        self.embedlayer = nn.Embedding(embed_size, embed_size, padding_idx=0)
+        self.lstm = torch.nn.LSTM(embed_size, embed_size, batch_first=True, bias=False)
+        self.lin = torch.nn.Linear(2*embed_size, vocab_size)
+
+    def forward(self, story, query):
+        story_embedded = self.embedlayer(story)
+        query_embedded = self.embedlayer(query.unsqueeze(1))
+        story_bow = torch.sum(story_embedded, dim=2)
+        query_bow = torch.sum(query_embedded, dim=2).squeeze(1) 
+        output, _ = self.lstm(story_bow)
+        output = output[:,-1,:]
+        output = torch.cat((output, query_bow), dim=-1)
+        pred = self.lin(output)
+        return pred
+
+
+
+
 def weight_norm(parameters):
     norm_type = 2
     total_norm = 0
@@ -66,8 +88,8 @@ def train(model, crit, optimizer, train_loader, args):
         pred_tokens = torch.argmax(sm(preds.detach()), 1)
         loss.backward(retain_graph=True)
         #torch.nn.utils.clip_grad_norm_(model.parameters(), 40.0)
-        _gradient_noise_and_clip(model.parameters(),
-                noise_stddev=0.005, max_clip=40.0, device=args.device)
+        #_gradient_noise_and_clip(model.parameters(),
+        #        noise_stddev=0.005, max_clip=40.0, device=args.device)
         optimizer.step()
         totalloss += loss.item()
         #print(totalloss)
@@ -133,10 +155,12 @@ def main(args):
 
     # 2nd and 3rd last arguments for verba and action
     #model = REN1(20, train_dataset.num_vocab, 100, args.device, train_dataset.sentence_size).to(args.device)
-    model = REN1(20, train_dataset.num_vocab, 100, args.device, train_dataset.sentence_size, train_dataset.query_size).to(args.device)
-    model.init_keys()
+    #model = REN1(20, train_dataset.num_vocab, 100, args.device, train_dataset.sentence_size, train_dataset.query_size).to(args.device)
+    #model.init_keys()
+
+    model = SmallModel(train_dataset.num_vocab, 100).to(args.device)
     #paths =  utils.build_paths(args.output_path, args.exp_name)
-    log_path = os.path.join("logs", args.exp_name)
+    log_path = os.path.join(args.log_dir, args.exp_name)
     if not os.path.exists(log_path):
         os.makedirs(log_path)
     writer = SummaryWriter(log_path)
@@ -190,16 +214,23 @@ def main(args):
             filter(lambda p: p.grad is not None, model.parameters()))]
         writer.add_scalar('gradient_norm', weight_norm(parameters), epoch)
 
-        writer.add_scalar('output/R', weight_norm(model.output.R.weight.grad.data), epoch)
-        writer.add_scalar('output/H', weight_norm(model.output.H.weight.grad.data), epoch)
-        writer.add_scalar('story_enc/mask', weight_norm(model.story_enc.mask.grad), epoch)
-        writer.add_scalar('query_enc/mask', weight_norm(model.query_enc.mask.grad), epoch)
-        writer.add_scalar('prelu', weight_norm(model.prelu.weight.grad.data), epoch)
-        writer.add_scalar('embed', weight_norm(model.embedlayer.weight.grad.data), epoch)
-        writer.add_scalar('cell/U', weight_norm(model.cell.U.weight.grad.data), epoch)
-        writer.add_scalar('cell/V', weight_norm(model.cell.V.weight.grad.data), epoch)
-        writer.add_scalar('cell/W', weight_norm(model.cell.W.weight.grad.data), epoch)
-        writer.add_scalar('cell/bias', weight_norm(model.cell.bias.grad), epoch)
+        writer.add_scalar('grad/lstm_ih', weight_norm(model.lstm._parameters['weight_ih_l0'].grad.data), epoch)
+        writer.add_scalar('grad/lstm_hh', weight_norm(model.lstm._parameters['weight_ih_l0'].grad.data), epoch)
+        writer.add_scalar('grad/lin', weight_norm(model.lin.weight.grad.data), epoch)
+        writer.add_scalar('lstm_ih', weight_norm(model.lstm._parameters['weight_ih_l0'].data), epoch)
+        writer.add_scalar('lstm_hh', weight_norm(model.lstm._parameters['weight_hh_l0'].data), epoch)
+        writer.add_scalar('lin', weight_norm(model.lin.weight.data), epoch)
+
+        #writer.add_scalar('output/R', weight_norm(model.output.R.weight.grad.data), epoch)
+        #writer.add_scalar('output/H', weight_norm(model.output.H.weight.grad.data), epoch)
+        #writer.add_scalar('story_enc/mask', weight_norm(model.story_enc.mask.grad), epoch)
+        #writer.add_scalar('query_enc/mask', weight_norm(model.query_enc.mask.grad), epoch)
+        #writer.add_scalar('prelu', weight_norm(model.prelu.weight.grad.data), epoch)
+        #writer.add_scalar('embed', weight_norm(model.embedlayer.weight.grad.data), epoch)
+        #writer.add_scalar('cell/U', weight_norm(model.cell.U.weight.grad.data), epoch)
+        #writer.add_scalar('cell/V', weight_norm(model.cell.V.weight.grad.data), epoch)
+        #writer.add_scalar('cell/W', weight_norm(model.cell.W.weight.grad.data), epoch)
+        #writer.add_scalar('cell/bias', weight_norm(model.cell.bias.grad), epoch)
 
 
         # writer.add_scalar('param_output/R', weight_norm(model.output.R.weight.data), epoch)
@@ -224,7 +255,7 @@ def main(args):
                     epoch, train_result['loss'], train_result['accuracy'],
                     val_result['loss'], val_result['accuracy'], log_lr)
             print(logline)
-
+            """
             torch.save({
                 'state_dict': model.state_dict(),
                 'epochs': epoch+1,
@@ -233,6 +264,7 @@ def main(args):
                 'val_scores': val_result,
                 'optimizer': optimizer.state_dict()
             }, os.path.join(args.output_path, "%s_%d.pth"%(args.exp_name, epoch)))
+            """
 
     return None
 
@@ -241,6 +273,7 @@ if __name__ == "__main__":
     np.random.seed(1000)
     parser = argparse.ArgumentParser(description="")
     parser.add_argument("--datadir", type=str, default='/scratch/ag4508/pn_kaggle/')
+    parser.add_argument("--log_dir", type=str, default='logs')
     parser.add_argument("--task", type=int, default=1)
 
     parser.add_argument("--load_model", type=str, default=None,
