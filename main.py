@@ -1,48 +1,82 @@
 import os
 import argparse
 import torch
+import torch.nn as nn
 from torch.utils import data as data_utils
 #from torch.utils.data.dataset import Dataset
 import torch.optim as optim
-#from tensorboardX import SummaryWriter
+from tensorboardX import SummaryWriter
 from torch.optim.lr_scheduler import StepLR
 import numpy as np
 #import utils
 
 from dataset import bAbIDataset
-from model import REN
+from model1 import REN1
+
+import torch.nn.functional as F
+
+def weight_norm(parameters):
+    norm_type = 2
+    total_norm = 0
+    if parameters is None:
+        return 0
+    for p in parameters:
+        param_norm = p.norm(norm_type)
+        total_norm += param_norm.item() ** norm_type
+    total_norm = total_norm ** (1. / norm_type)
+    return total_norm
+
+def _gradient_noise_and_clip(parameters,
+                                noise_stddev=1e-3, max_clip=40.0, device="cpu"):
+    parameters = list(filter(lambda p: p.grad is not None, parameters))
+    nn.utils.clip_grad_norm(parameters, max_clip)
+
+    for p in parameters:
+        noise = torch.randn(p.size()) * noise_stddev
+        p.grad.data.add_(noise.to(device))
+
+def cyclic_lr(step, step_size, lr_min, lr_max):
+    cycle = np.floor(1+float(step) / (2*step_size))
+    x = np.abs(float(step)/step_size-2*cycle+1)
+    lr = lr_min + (lr_max-lr_min)*np.max([0.0, 1-x])
+    return lr
+
 
 def train(model, crit, optimizer, train_loader, args):
     model.train()
     totalloss, correct = 0,0
     sm = torch.nn.Softmax()
     for i, (story, query, answer) in enumerate(train_loader):
+        #if i==0:
+            # print(story)
+            # print("\n")
+            # print(query)
+            # print("\n")
+            #print(answer)
+
         model.zero_grad()
         story, query, answer = story.to(args.device), query.to(args.device), answer.to(args.device)
+
         preds = model(story, query)
+        #if i==0:
+        #    print(torch.argmax(preds, dim=1))
+
         loss = crit(preds, answer)
+        loss = loss / story.shape[1]
         pred_tokens = torch.argmax(sm(preds.detach()), 1)
         loss.backward(retain_graph=True)
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 40.0)
+        #torch.nn.utils.clip_grad_norm_(model.parameters(), 40.0)
+        _gradient_noise_and_clip(model.parameters(),
+                noise_stddev=0.005, max_clip=40.0, device=args.device)
         optimizer.step()
         totalloss += loss.item()
         #print(totalloss)
         correct += pred_tokens.eq(answer.detach()).sum().to("cpu").item()
 
 
-    parameters = list(filter(lambda p: p.grad is not None, model.parameters()))
-    norm_type = 1
-    total_norm = 0
-    for p in parameters:
-        param_norm = p.grad.data.norm(norm_type)
-        total_norm += param_norm.item() ** norm_type
-    total_norm = total_norm ** (1. / norm_type)   
-    print(total_norm) 
-    print(pred_tokens)
-    print(answer)
-    print(loss)
-    print('-------------------')
-
+    #print(sm(preds.detach()[:5]))
+    #print(pred_tokens[:10])
+    #print(answer[:10])
     totalloss /= (i+1)
     correct = (correct*1.0) / ((i+1) * args.batchsize)
     return {'loss': totalloss,
@@ -58,18 +92,22 @@ def eval(model, crit, val_loader, args):
             loss = crit(preds, answer)
             totalloss += loss.item()
             correct += torch.argmax(preds.detach(), 1).eq(answer.detach()).sum().to("cpu").item()
-    
-    totalloss /= (i+1)
-    correct = (correct*1.0) / ((i+1) * args.batchsize)
+
+        totalloss /= (i+1)
+        correct = (correct*1.0) / ((i+1) * args.batchsize)
     return {'loss': totalloss,
             'accuracy': correct}
+
 
 def main(args):
     train_dataset = bAbIDataset(args.datadir, args.task)
     val_dataset = bAbIDataset(args.datadir, args.task, train=False)
     print("Dataset size: ", len(train_dataset))
-    print("Vocab size: ", train_dataset.num_vocab)
-    print(train_dataset.word_idx)
+    #print("Vocab size: ", train_dataset.num_vocab)
+    print(train_dataset.sentence_size)
+    print(train_dataset.vocab)
+    print(train_dataset[0][0].shape)
+
     train_loader = data_utils.DataLoader(
         train_dataset,
         batch_size=args.batchsize,
@@ -82,26 +120,40 @@ def main(args):
         val_dataset,
         batch_size=args.batchsize,
         num_workers=args.njobs,
-        shuffle = True,
+        shuffle = False,
         pin_memory=True,
         timeout=300,
         drop_last=True)
-
+    """
+    print(train_dataset[0][0][0])
+    print(train_dataset[0][-1][0])
+    print([train_dataset.idx2word[i] for i in train_dataset[0][0][0]])
+    exit()
+    """
 
     # 2nd and 3rd last arguments for verba and action
-    model = REN(train_dataset.num_vocab, 100, 20, 0, 0, args.batchsize, args.device)
+    #model = REN1(20, train_dataset.num_vocab, 100, args.device, train_dataset.sentence_size).to(args.device)
+    model = REN1(20, train_dataset.num_vocab, 100, args.device, train_dataset.sentence_size, train_dataset.query_size).to(args.device)
+    model.init_keys()
     #paths =  utils.build_paths(args.output_path, args.exp_name)
-    #writer = SummaryWriter(paths['logs'])
-    
-    # TODO to device
-    model = model.to(args.device)
+    log_path = os.path.join("logs", args.exp_name)
+    if not os.path.exists(log_path):
+        os.makedirs(log_path)
+    writer = SummaryWriter(log_path)
+
     if args.multi:
         model = torch.nn.DataParallel(model, device_ids=args.gpu_range)
 
     loss = torch.nn.CrossEntropyLoss().to(args.device)
-    optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
-    scheduler = StepLR(optimizer, step_size=25, gamma=0.5)
+    if args.cyc_lr is True:
+        lr = cyclic_lr(0, 10, 2e-4, 1e-2)
+    else:
+        lr = args.lr
+    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=args.weight_decay)
+
+    if not args.cyc_lr:
+        scheduler = StepLR(optimizer, step_size=25, gamma=0.5)
 
     start_epoch, end_epoch = 0, args.epochs
     if args.load_model is not None and args.load_model != '':
@@ -114,19 +166,55 @@ def main(args):
         optimizer.load_state_dict(pt_model['optimizer'])
         start_epoch = pt_model['epochs']
         end_epoch = start_epoch + args.epochs
-    
+
 
     for epoch in range(start_epoch, end_epoch):
         train_result = train(model, loss, optimizer, train_loader, args)
         val_result = eval(model, loss, val_loader, args)
-        if epoch < 200:
+        if args.cyc_lr is True:
+            lr = cyclic_lr(epoch*(len(train_dataset)//args.batchsize), 10, 2e-4, 1e-2)
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = lr#cyclic_learning_rate(epoch*(len(train_dataset)//args.batchsize))
+        elif epoch < 200:
             scheduler.step()
-    
-        #utils.write_logs(epoch, writer, train_result, 'train')
-        #utils.write_logs(epoch, writer, val_result, 'val')
-        #for param_group in optimizer.param_groups:
-        #  writer.add_scalar('lr', param_group['lr'], epoch)
-        #  break
+
+        for key in train_result.keys():
+            writer.add_scalar('{}_{}'.format('train', key), train_result[key], epoch)
+        for key in val_result.keys():
+            writer.add_scalar('{}_{}'.format('val', key), val_result[key], epoch)
+        for param_group in optimizer.param_groups:
+          writer.add_scalar('lr', param_group['lr'], epoch)
+          break
+
+        parameters = [_.grad.data for _ in list(
+            filter(lambda p: p.grad is not None, model.parameters()))]
+        writer.add_scalar('gradient_norm', weight_norm(parameters), epoch)
+
+        writer.add_scalar('output/R', weight_norm(model.output.R.weight.grad.data), epoch)
+        writer.add_scalar('output/H', weight_norm(model.output.H.weight.grad.data), epoch)
+        writer.add_scalar('story_enc/mask', weight_norm(model.story_enc.mask.grad), epoch)
+        writer.add_scalar('query_enc/mask', weight_norm(model.query_enc.mask.grad), epoch)
+        writer.add_scalar('prelu', weight_norm(model.prelu.weight.grad.data), epoch)
+        writer.add_scalar('embed', weight_norm(model.embedlayer.weight.grad.data), epoch)
+        writer.add_scalar('cell/U', weight_norm(model.cell.U.weight.grad.data), epoch)
+        writer.add_scalar('cell/V', weight_norm(model.cell.V.weight.grad.data), epoch)
+        writer.add_scalar('cell/W', weight_norm(model.cell.W.weight.grad.data), epoch)
+        writer.add_scalar('cell/bias', weight_norm(model.cell.bias.grad), epoch)
+
+
+        # writer.add_scalar('param_output/R', weight_norm(model.output.R.weight.data), epoch)
+        # writer.add_scalar('param_output/H', weight_norm(model.output.H.weight.data), epoch)
+        # writer.add_scalar('param_story_enc/mask', weight_norm(model.story_enc.mask), epoch)
+        # writer.add_scalar('param_query_enc/mask', weight_norm(model.query_enc.mask), epoch)
+        # writer.add_scalar('param_prelu', weight_norm(model.prelu.weight.data), epoch)
+        # writer.add_scalar('param_embed', weight_norm(model.embedlayer.weight.data), epoch)
+        # writer.add_scalar('param_cell/U', weight_norm(model.cell.U.weight.data), epoch)
+        # writer.add_scalar('param_cell/V', weight_norm(model.cell.V.weight.data), epoch)
+        # writer.add_scalar('param_cell/W', weight_norm(model.cell.W.weight.data), epoch)
+        # writer.add_scalar('param_cell/bias', weight_norm(model.cell.bias), epoch)
+
+
+
         if epoch % args.save_interval == 0 or epoch == args.epochs-1:
             for param_group in optimizer.param_groups:
                 log_lr = param_group['lr']
@@ -135,9 +223,8 @@ def main(args):
                     Val Loss {3:.4f} Acc {4:.3f} lr {5:.4f}'.format(
                     epoch, train_result['loss'], train_result['accuracy'],
                     val_result['loss'], val_result['accuracy'], log_lr)
-
             print(logline)
-            """
+
             torch.save({
                 'state_dict': model.state_dict(),
                 'epochs': epoch+1,
@@ -145,8 +232,7 @@ def main(args):
                 'train_scores': train_result,
                 'val_scores': val_result,
                 'optimizer': optimizer.state_dict()
-            }, os.path.join("/misc/vlgscratch2/LecunGroup/anant/ren", "%s_%d.pth"%(args.exp_name, epoch)))
-            """
+            }, os.path.join(args.output_path, "%s_%d.pth"%(args.exp_name, epoch)))
 
     return None
 
@@ -160,19 +246,19 @@ if __name__ == "__main__":
     parser.add_argument("--load_model", type=str, default=None,
                               help='Path to saved classifier model')
     parser.add_argument("--batchsize", type=int, default=32)
-    parser.add_argument("--njobs", type=int, default=2)
+    parser.add_argument("--njobs", type=int, default=10)
     parser.add_argument("--lr", type=float, default=0.01)
-    parser.add_argument("--lr_step", type=int, default=10)
-    parser.add_argument("--weight_decay", type=float, default=1e-6)
+    parser.add_argument("--weight_decay", type=float, default=0)
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--save_interval", type=int, default=10)
-    parser.add_argument("--output_path", type=str, default='/scratch/ag4508/pn_kaggle/output',
+    parser.add_argument("--output_path", type=str, default='/misc/vlgscratch2/LecunGroup/anant/ren/models',
                                 help='Location to save the logs')
     parser.add_argument("--exp_name", type=str, default='default_model',
                                 help='Experiment Name')
     parser.add_argument("--gpuid", type=int, default=0, help='Default GPU id')
     parser.add_argument("--multi", action='store_true', help='To use DataParallel')
     parser.add_argument("--gpu_range",type=str,default="0,1,2,3", help='GPU ids to use if multi')
+    parser.add_argument("--cyc_lr", action='store_true', help='Cyclic LR')
 
     args = parser.parse_args()
     args.gpu_range = [int(_) for _ in args.gpu_range.split(",")]
@@ -183,4 +269,3 @@ if __name__ == "__main__":
     #    torch.cuda.set_device(args.gpuid)
     print("Script configuration:\n", args)
     main(args)
-

@@ -5,8 +5,7 @@ from itertools import chain
 import numpy as np
 import torch
 import torch.utils.data as data
-from data_utils import load_task, vectorize_data
-from six.moves import range
+from data_utils import *#load_task, vectorize_data
 
 class bAbIDataset(data.Dataset):
     def __init__(self, dataset_dir, task_id=1, memory_size=70, train=True):
@@ -17,6 +16,38 @@ class bAbIDataset(data.Dataset):
         train_data, test_data = load_task(self.dataset_dir, task_id)
         data = train_data + test_data
 
+
+        if task_id == 'qa3':
+            truncated_story_length = 130
+        else:
+            truncated_story_length = 70
+        stories_train = truncate_stories(train_data, truncated_story_length)
+        stories_test = truncate_stories(test_data, truncated_story_length)
+
+        self.vocab, token_to_id = get_tokenizer(stories_train + stories_test)
+        self.num_vocab = len(self.vocab)
+
+        stories_token_train = tokenize_stories(stories_train, token_to_id)
+        stories_token_test = tokenize_stories(stories_test, token_to_id)
+        stories_token_all = stories_token_train + stories_token_test
+
+
+        story_lengths = [len(sentence) for story, _, _ in stories_token_all for sentence in story]
+        max_sentence_length = max(story_lengths)
+        max_story_length = max([len(story) for story, _, _ in stories_token_all])
+        max_query_length = max([len(query) for _, query, _ in stories_token_all])
+        self.sentence_size = max_sentence_length
+        self.query_size = max_query_length
+        if train:
+            story, query, answer = pad_stories(stories_token_train, \
+                max_sentence_length, max_story_length, max_query_length)
+        else:
+
+            story, query, answer = pad_stories(stories_token_test, \
+                max_sentence_length, max_story_length, max_query_length)
+        """
+        print(stories_pad_train[:5])
+        exit()
         self.vocab = set()
         for story, query, answer in data:
             self.vocab = self.vocab | set(list(chain.from_iterable(story))+query+answer)
@@ -30,13 +61,14 @@ class bAbIDataset(data.Dataset):
         self.memory_size = min(memory_size, self.max_story_size)
 
         # Add time words/indexes
-        for i in range(self.memory_size):
-            word_idx["time{}".format(i+1)] = "time{}".format(i+1)
+        #for i in range(self.memory_size):
+        #    word_idx["time{}".format(i+1)] = "time{}".format(i+1)
 
         self.num_vocab = len(word_idx) + 1 # +1 for nil word
         self.sentence_size = max(self.query_size, self.sentence_size) # for the position
-        self.sentence_size += 1  # +1 for time words
+        #self.sentence_size += 1  # +1 for time words
         self.word_idx = word_idx
+        self.idx2word = {self.word_idx[i]:i for i in self.word_idx.keys()}
 
         self.mean_story_size = int(np.mean([ len(s) for s, _, _ in data ]))
 
@@ -46,10 +78,10 @@ class bAbIDataset(data.Dataset):
         else:
             story, query, answer = vectorize_data(test_data, self.word_idx,
                 self.sentence_size, self.memory_size)
-
+        """
         self.data_story = torch.LongTensor(story)
         self.data_query = torch.LongTensor(query)
-        self.data_answer = torch.LongTensor(np.argmax(answer, axis=1))
+        self.data_answer = torch.LongTensor(answer)
 
     def __getitem__(self, idx):
         return self.data_story[idx], self.data_query[idx], self.data_answer[idx]

@@ -6,6 +6,8 @@ import os
 import re
 import numpy as np
 
+PAD_TOKEN = '_PAD'
+PAD_ID = 0
 def load_task(data_dir, task_id, only_supporting=False):
     """
     Load the nth task. There are 20 tasks in total.
@@ -23,20 +25,49 @@ def load_task(data_dir, task_id, only_supporting=False):
     return train_data, test_data
 
 
-def tokenize(sent):
-    """
-    Return the tokens of a sentence including punctuation.
-    >>> tokenize('Bob dropped the apple. Where is the apple?')
-    ['Bob', 'dropped', 'the', 'apple', '.', 'Where', 'is', 'the', 'apple', '?']
-    """
-    return [x.strip() for x in re.split("(\W+)?", sent) if x.strip()]
+#def tokenize(sent):
+#    return [x.strip() for x in re.split("(\W+)?", sent) if x.strip()]
 
+SPLIT_RE = re.compile(r'(\W+)?')
+def tokenize(sentence):
+    "Tokenize a string by splitting on non-word characters and stripping whitespace."
+    return [token.strip().lower() for token in re.split(SPLIT_RE, sentence) if token.strip()]
 
 def parse_stories(lines, only_supporting=False):
     """
-    Parse stories provided in the bAbI tasks format
-    If only_supporting is true, only the sentences that support the answer are kept.
+    Parse the bAbI task format described here: https://research.facebook.com/research/babi/
+    If only_supporting is True, only the sentences that support the answer are kept.
     """
+    stories = []
+    story = []
+    for line in lines:
+        line = line.strip()
+        nid, line = line.split(' ', 1)
+        nid = int(nid)
+        if nid == 1:
+            story = []
+        if '\t' in line:
+            query, answer, supporting = line.split('\t')
+            query = tokenize(query)
+            substory = None
+            if only_supporting:
+                # Only select the related substory
+                supporting = map(int, supporting.split())
+                substory = [story[i - 1] for i in supporting]
+            else:
+                # Provide all the substories
+                substory = [x for x in story if x]
+            stories.append((substory, query, answer))
+            story.append('')
+        else:
+            sentence = tokenize(line)
+            story.append(sentence)
+    return stories
+
+
+
+"""
+def parse_stories(lines, only_supporting=False):
     data = []
     story = []
     for line in lines:
@@ -54,8 +85,8 @@ def parse_stories(lines, only_supporting=False):
             substory = None
 
             # remove question marks
-            if q[-1] == "?":
-                q = q[:-1]
+            #if q[-1] == "?":
+            #    q = q[:-1]
 
             if only_supporting:
                 # Only select the related substory
@@ -74,7 +105,7 @@ def parse_stories(lines, only_supporting=False):
                 sent = sent[:-1]
             story.append(sent)
     return data
-
+"""
 
 def get_stories(f, only_supporting=False):
     """
@@ -107,8 +138,8 @@ def vectorize_data(data, word_idx, sentence_size, memory_size):
 
         # Make the last word of each sentence the time 'word' which
         # corresponds to vector of lookup table
-        for i in range(len(ss)):
-            ss[i][-1] = len(word_idx) - memory_size - i + len(ss)
+        #for i in range(len(ss)):
+        #    ss[i][-1] = len(word_idx) - memory_size - i + len(ss)
 
         # pad to memory_size
         lm = max(0, memory_size - len(ss))
@@ -126,3 +157,54 @@ def vectorize_data(data, word_idx, sentence_size, memory_size):
     return np.array(S), np.array(Q), np.array(A)
 
 
+
+def truncate_stories(stories, max_length):
+    "Truncate a story to the specified maximum length."
+    stories_truncated = []
+    for story, query, answer in stories:
+        story_truncated = story[-max_length:]
+        stories_truncated.append((story_truncated, query, answer))
+    return stories_truncated
+
+def get_tokenizer(stories):
+    "Recover unique tokens as a vocab and map the tokens to ids."
+    tokens_all = []
+    for story, query, answer in stories:
+        tokens_all.extend([token for sentence in story for token in sentence] + query + [answer])
+    vocab = [PAD_TOKEN] + sorted(set(tokens_all))
+    token_to_id = {token: i for i, token in enumerate(vocab)}
+    return vocab, token_to_id
+
+def tokenize_stories(stories, token_to_id):
+    "Convert all tokens into their unique ids."
+    story_ids = []
+    for story, query, answer in stories:
+        story = [[token_to_id[token] for token in sentence] for sentence in story]
+        query = [token_to_id[token] for token in query]
+        answer = token_to_id[answer]
+        story_ids.append((story, query, answer))
+    return story_ids
+
+def pad_stories(stories, max_sentence_length, max_story_length, max_query_length):
+    "Pad sentences, stories, and queries to a consistence length."
+    allstories, queries, answers = [], [], []
+    for story, query, ans in stories:
+        for sentence in story:
+            for _ in range(max_sentence_length - len(sentence)):
+                sentence.append(PAD_ID)
+            assert len(sentence) == max_sentence_length
+
+        for _ in range(max_story_length - len(story)):
+            story.append([PAD_ID for _ in range(max_sentence_length)])
+
+        for _ in range(max_query_length - len(query)):
+            query.append(PAD_ID)
+
+        assert len(story) == max_story_length
+        assert len(query) == max_query_length
+
+        allstories.append(story)
+        queries.append(query)
+        answers.append(ans)
+
+    return np.array(allstories), np.array(queries), np.array(answers)
