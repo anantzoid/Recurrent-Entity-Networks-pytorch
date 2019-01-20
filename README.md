@@ -36,4 +36,4 @@ Task | EntNet (paper) | EntNet (TF) | EntNet (Pytorch)
 19: path finding | 2.3 | 0 | -
 20: agents motivation | 0 | 0 | 0
 
-All tasks were run under the same settings. Not all tasks acheived optimal results under those settings. Similar behaviour was reflected in the reference [TF repo](https://github.com/jimfleming/recurrent-entity-networks/issues/19) as well.
+All tasks were run under the same settings. Not all tasks acheived optimal results under those settings. Similar behaviour was reflected in the reference [TF repo](https://github.com/jimfleming/recurrent-entity-networks/issues/19) as well. Any assistance in helping to resolve this is appreciated.
