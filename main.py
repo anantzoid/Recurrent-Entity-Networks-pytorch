@@ -3,17 +3,13 @@ import argparse
 import torch
 import torch.nn as nn
 from torch.utils import data as data_utils
-#from torch.utils.data.dataset import Dataset
 import torch.optim as optim
 from tensorboardX import SummaryWriter
 from torch.optim.lr_scheduler import StepLR
 import numpy as np
-#import utils
 
 from dataset import bAbIDataset
-from model1 import REN1
-
-import torch.nn.functional as F
+from model import REN
 
 def weight_norm(parameters):
     norm_type = 2
@@ -47,25 +43,16 @@ def train(model, crit, optimizer, train_loader, args):
     totalloss, correct = 0,0
     sm = torch.nn.Softmax()
     for i, (story, query, answer) in enumerate(train_loader):
-        #if i==0:
-            # print(story)
-            # print("\n")
-            # print(query)
-            # print("\n")
-            #print(answer)
 
         model.zero_grad()
         story, query, answer = story.to(args.device), query.to(args.device), answer.to(args.device)
 
         preds = model(story, query)
-        #if i==0:
-        #    print(torch.argmax(preds, dim=1))
 
         loss = crit(preds, answer)
         loss = loss / story.shape[1]
         pred_tokens = torch.argmax(sm(preds.detach()), 1)
         loss.backward(retain_graph=True)
-        #torch.nn.utils.clip_grad_norm_(model.parameters(), 40.0)
         _gradient_noise_and_clip(model.parameters(),
                 noise_stddev=0.005, max_clip=40.0, device=args.device)
         optimizer.step()
@@ -74,9 +61,6 @@ def train(model, crit, optimizer, train_loader, args):
         correct += pred_tokens.eq(answer.detach()).sum().to("cpu").item()
 
 
-    #print(sm(preds.detach()[:5]))
-    #print(pred_tokens[:10])
-    #print(answer[:10])
     totalloss /= (i+1)
     correct = (correct*1.0) / ((i+1) * args.batchsize)
     return {'loss': totalloss,
@@ -104,9 +88,9 @@ def main(args):
     val_dataset = bAbIDataset(args.datadir, args.task, train=False)
     print("Dataset size: ", len(train_dataset))
     #print("Vocab size: ", train_dataset.num_vocab)
-    print(train_dataset.sentence_size)
-    print(train_dataset.vocab)
-    print(train_dataset[0][0].shape)
+    print("Sentence size:", train_dataset.sentence_size)
+    print("Vocab set: ", train_dataset.vocab)
+    print("Story shape:", train_dataset[0][0].shape)
 
     train_loader = data_utils.DataLoader(
         train_dataset,
@@ -124,18 +108,9 @@ def main(args):
         pin_memory=True,
         timeout=300,
         drop_last=True)
-    """
-    print(train_dataset[0][0][0])
-    print(train_dataset[0][-1][0])
-    print([train_dataset.idx2word[i] for i in train_dataset[0][0][0]])
-    exit()
-    """
 
-    # 2nd and 3rd last arguments for verba and action
-    #model = REN1(20, train_dataset.num_vocab, 100, args.device, train_dataset.sentence_size).to(args.device)
-    model = REN1(20, train_dataset.num_vocab, 100, args.device, train_dataset.sentence_size, train_dataset.query_size).to(args.device)
+    model = REN(20, train_dataset.num_vocab, 100, args.device, train_dataset.sentence_size, train_dataset.query_size).to(args.device)
     model.init_keys()
-    #paths =  utils.build_paths(args.output_path, args.exp_name)
     log_path = os.path.join("logs", args.exp_name)
     if not os.path.exists(log_path):
         os.makedirs(log_path)
@@ -240,9 +215,8 @@ if __name__ == "__main__":
     torch.manual_seed(3000)
     np.random.seed(1000)
     parser = argparse.ArgumentParser(description="")
-    parser.add_argument("--datadir", type=str, default='/scratch/ag4508/pn_kaggle/')
+    parser.add_argument("--datadir", type=str, default='.data/tasks_1-20_v1-2/en/')
     parser.add_argument("--task", type=int, default=1)
-
     parser.add_argument("--load_model", type=str, default=None,
                               help='Path to saved classifier model')
     parser.add_argument("--batchsize", type=int, default=32)
