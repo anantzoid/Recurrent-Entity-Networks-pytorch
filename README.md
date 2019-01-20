@@ -1,6 +1,6 @@
 # Recurrent Entity Networks
 
-Pytorch implementation of REN as described in [Tracking the World State with Recurrent Entity Networks](https://arxiv.org/abs/1612.03969). The code is adapted from the Tensorflow version by [Jim Fleming](https://github.com/jimfleming).  
+Pytorch implementation of REN as described in [Tracking the World State with Recurrent Entity Networks](https://arxiv.org/abs/1612.03969). The code is adapted from the [Tensorflow version](https://github.com/jimfleming/recurrent-entity-networks).  
 
 ## Some implementation-specific points that weren't clear to me from the paper:
 1. PReLU shares parameters between memory and output model. Number of parameters is equal to the number of units.
